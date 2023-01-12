@@ -7,6 +7,7 @@
 #include "vertex_layout.h"
 #include "texture.h"
 #include "mesh.h"
+#include "model.h"
 
 CLASS_PTR(Context)
 class Context {
@@ -25,6 +26,7 @@ private:
     ProgramUPtr m_simpleProgram;
 
 	MeshUPtr m_box;
+	ModelUPtr m_model;
     TextureUPtr m_texture;
     TextureUPtr m_texture2;
 
@@ -49,6 +51,7 @@ private:
 		glm::vec3 specular { glm::vec3(1.0f, 1.0f, 1.0f) };
 	};
 	Light m_light;
+	bool m_flashLightMode { false };
 
 	struct Material {
 		//glm::vec3 ambient { glm::vec3(1.0f, 0.5f, 0.3f) };

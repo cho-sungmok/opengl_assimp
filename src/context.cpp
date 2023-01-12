@@ -81,6 +81,9 @@ void Context::MouseButton(int button, int action, double x, double y)
 bool Context::init()
 {
 	m_box = Mesh::CreateBox();
+	m_model = Model::Load("./model/backpack.obj");
+	if(!m_model)
+		return false;
 
 	m_simpleProgram = Program::Create("./shader/simple.vs", "./shader/simple.fs");
 	if(!m_simpleProgram)
@@ -107,8 +110,12 @@ bool Context::init()
     auto image2 = Image::Load("./image/awesomeface.png");
     m_texture2 = Texture::CreateFromImage(image2.get());
 
-    m_material.diffuse = Texture::CreateFromImage(Image::Load("./image/container2.png").get());
-    m_material.specular = Texture::CreateFromImage(Image::Load("./image/container2_specular.png").get());
+    //m_material.diffuse = Texture::CreateFromImage(Image::Load("./image/container2.png").get());
+    //m_material.specular = Texture::CreateFromImage(Image::Load("./image/container2_specular.png").get());
+    m_material.diffuse = Texture::CreateFromImage(
+		Image::CreateSingleColorImage(4, 4, glm::vec4(1.0f, 1.0f, 1.0f, 1.0f)).get());
+    m_material.specular = Texture::CreateFromImage(
+		Image::CreateSingleColorImage(4, 4, glm::vec4(0.5f, 0.5f, 0.5f, 1.0f)).get());
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_texture->Get());
@@ -153,6 +160,7 @@ void Context::Render()
 			ImGui::ColorEdit3("l.ambient", glm::value_ptr(m_light.ambient));
 			ImGui::ColorEdit3("l.diffuse", glm::value_ptr(m_light.diffuse));
 			ImGui::ColorEdit3("l.specular", glm::value_ptr(m_light.specular));
+			ImGui::Checkbox("falsh light", &m_flashLightMode);
 		}
 
 		if (ImGui::CollapsingHeader("material", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -165,19 +173,6 @@ void Context::Render()
 	}
 	ImGui::End();
 
-	std::vector<glm::vec3> cubePositions = {
-		glm::vec3( 0.0f, 0.0f, 0.0f),
-		glm::vec3( 2.0f, 5.0f, -15.0f),
-		glm::vec3(-1.5f,-2.2f,-2.5f),
-		glm::vec3(-3.8f,-2.0f,-12.3f),
-		glm::vec3( 2.4f,-0.4f,-3.5f),
-		glm::vec3(-1.7f, 3.0f,-7.5f),
-		glm::vec3( 1.3f,-2.0f,-2.5f),
-		glm::vec3( 1.5f, 2.0f,-2.5f),
-		glm::vec3( 1.5f, 0.2f,-1.5f),
-		glm::vec3(-1.3f, 1.0f,-1.5f),
-	};
-
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glEnable(GL_DEPTH_TEST);
 
@@ -187,27 +182,27 @@ void Context::Render()
 		glm::vec4(0.0f, 0.0f, -1.0f, 0.0f);// 벡터를 의미(평행이동 안됨)
 		//glm::vec4(0.0f, 0.0f, -1.0f, 1.0f);// 점을 의미
 
-#if 1// 공포게임의 경우
-	m_light.position = m_cameraPos;
-	m_light.direction = m_cameraFront;
-#endif
-
     auto projection = glm::perspective(glm::radians(45.0f),
 		(float)m_width/(float)m_height, 0.01f, 30.0f);
 
 	auto view = glm::lookAt(m_cameraPos,
 		m_cameraPos + m_cameraFront, m_cameraUp);
 
-#if 0// point + spot light
-	auto lightModelTransform =
+	glm::vec3 lightPos = m_light.position;
+	glm::vec3 lightDir = m_light.direction;
+	if(m_flashLightMode) {// 공포게임의 경우
+		lightPos = m_cameraPos;
+		lightDir = m_cameraFront;
+	} else {
+		auto lightModelTransform =
 		glm::translate(glm::mat4(1.0), m_light.position) *
 		glm::scale(glm::mat4(1.0), glm::vec3(0.1f));
-	m_simpleProgram->Use();
-	m_simpleProgram->SetUniform("color", glm::vec4(m_light.ambient + m_light.diffuse, 1.0f));
-	m_simpleProgram->SetUniform("transform", projection * view * lightModelTransform);
-	//glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
-	m_box->Draw();
-#endif
+		m_simpleProgram->Use();
+		m_simpleProgram->SetUniform("color", glm::vec4(m_light.ambient + m_light.diffuse, 1.0f));
+		m_simpleProgram->SetUniform("transform", projection * view * lightModelTransform);
+		//glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
+		m_box->Draw(m_simpleProgram.get());
+	}
 
 	m_program->Use();
 	m_program->SetUniform("viewPos", m_cameraPos);
@@ -217,9 +212,9 @@ void Context::Render()
 #elif 0// direction light
 	m_program->SetUniform("light.direction", m_light.direction);
 #elif 1// point light
-	m_program->SetUniform("light.position", m_light.position);
+	m_program->SetUniform("light.position", lightPos);
 	m_program->SetUniform("light.attenuation", GetAttenuationCoeff(m_light.distance));
-	m_program->SetUniform("light.direction", m_light.direction);
+	m_program->SetUniform("light.direction", lightDir);
 	//m_program->SetUniform("light.cutoff", cosf(glm::radians(m_light.cutoff)));
 	m_program->SetUniform("light.cutoff", glm::vec2(
 		cosf(glm::radians(m_light.cutoff[0])),
@@ -240,19 +235,12 @@ void Context::Render()
 	glActiveTexture(GL_TEXTURE1);
 	m_material.specular->Bind();
 
-	for(size_t i=0; i<cubePositions.size(); i++)
-	{
-		auto& pos = cubePositions[i];
-		auto model = glm::translate(glm::mat4(1.0f), pos);
-		model = glm::rotate(model,
-			glm::radians((m_animation ? (float)glfwGetTime() : 0.0f) * 120 + 20 * i),
-			glm::vec3(1.0f, 0.5f, 0.0f));
-		auto transform = projection * view * model;
-		m_program->SetUniform("transform", transform);
-		m_program->SetUniform("modelTransform", model);
-		//glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);// 6 x 6
-		m_box->Draw();
-	}
+	auto modelTransform = glm::mat4(1.0f);
+	auto transform = projection * view * modelTransform;
+	m_program->SetUniform("transform", transform);
+	m_program->SetUniform("modelTransform", modelTransform);
+	//glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);// 6 x 6
+	m_model->Draw(m_program.get());
 }
 
 #include <iostream>
